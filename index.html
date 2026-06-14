@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Chat Archive — Year Selector</title>
   <style>
     /* ─── Reset & Base ─────────────────────────────────────────────────── */
@@ -41,23 +41,69 @@
       overflow: hidden;
     }
 
-    /* ─── Layout: sidebar + main ─────────────────────────────────────── */
+    /* ─── Layout: sidebar + main with mobile overlay ─────────────────── */
     .app {
       display: flex;
       height: 100%;
       width: 100%;
+      position: relative;
     }
 
-    /* SIDEBAR — modern, compact, year-focused */
+    /* SIDEBAR — collapsible, slide-out on mobile */
     .sidebar {
-      width: 260px;
+      position: fixed;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 280px;
       background: var(--sidebar-bg);
       border-right: 1px solid var(--topbar-border);
       display: flex;
       flex-direction: column;
-      z-index: 110;
-      flex-shrink: 0;
+      z-index: 200;
+      transform: translateX(-100%);
+      transition: transform 0.25s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+      box-shadow: 2px 0 12px rgba(0,0,0,0.3);
       overflow-y: auto;
+    }
+
+    .sidebar.open {
+      transform: translateX(0);
+    }
+
+    /* Desktop: sidebar always visible */
+    @media (min-width: 768px) {
+      .sidebar {
+        position: relative;
+        transform: translateX(0) !important;
+        width: 260px;
+        box-shadow: none;
+      }
+      .menu-toggle {
+        display: none !important;
+      }
+      .sidebar-overlay {
+        display: none !important;
+      }
+    }
+
+    /* Mobile overlay when sidebar is open */
+    .sidebar-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 150;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.2s ease, visibility 0.2s;
+    }
+
+    .sidebar-overlay.active {
+      opacity: 1;
+      visibility: visible;
     }
 
     .sidebar-header {
@@ -70,7 +116,26 @@
       text-transform: uppercase;
       display: flex;
       align-items: center;
+      justify-content: space-between;
+    }
+
+    .close-sidebar-btn {
+      background: rgba(255,255,255,0.08);
+      border: none;
+      color: var(--text-dim);
+      border-radius: 30px;
+      padding: 6px 12px;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
       gap: 6px;
+    }
+
+    @media (min-width: 768px) {
+      .close-sidebar-btn {
+        display: none;
+      }
     }
 
     .file-list {
@@ -79,6 +144,7 @@
       display: flex;
       flex-direction: column;
       gap: 4px;
+      flex: 1;
     }
 
     .file-item {
@@ -130,18 +196,45 @@
       flex-direction: column;
       overflow: hidden;
       position: relative;
+      width: 100%;
     }
 
-    /* Top bar (inside main) */
+    /* Top bar with menu button */
     .topbar {
       background: var(--topbar);
       border-bottom: 1px solid var(--topbar-border);
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 10px 16px;
+      gap: 10px;
+      padding: 10px 12px;
       min-height: 56px;
       flex-shrink: 0;
+    }
+
+    .menu-toggle {
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 8px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text);
+      transition: background 0.15s;
+      flex-shrink: 0;
+    }
+
+    .menu-toggle:hover {
+      background: rgba(255,255,255,0.08);
+    }
+
+    .menu-toggle svg {
+      width: 22px;
+      height: 22px;
+      stroke: currentColor;
+      stroke-width: 2;
+      fill: none;
     }
 
     .topbar-title {
@@ -169,6 +262,7 @@
       border-radius: 20px;
       padding: 0 8px 0 14px;
       transition: background 0.15s;
+      min-width: 0;
     }
 
     .search-bar:focus-within { background: var(--input-focus); }
@@ -187,10 +281,10 @@
     #search-input::placeholder { color: var(--text-dim); }
 
     .search-counter {
-      font-size: 12px;
+      font-size: 11px;
       color: var(--text-dim);
       white-space: nowrap;
-      min-width: 64px;
+      min-width: 55px;
       text-align: right;
       font-variant-numeric: tabular-nums;
     }
@@ -286,13 +380,13 @@
     }
 
     /* Messages & bubbles */
-    .msg-row { display: flex; padding: 2px 16px; animation: fadeIn 0.08s ease-out; }
+    .msg-row { display: flex; padding: 2px 12px; animation: fadeIn 0.08s ease-out; }
     @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
     .msg-row.me { justify-content: flex-end; }
     .msg-row.other { justify-content: flex-start; }
 
     .bubble {
-      max-width: min(72%, 520px);
+      max-width: min(78%, 520px);
       padding: 8px 12px 7px;
       border-radius: var(--radius);
       word-break: break-word;
@@ -318,28 +412,45 @@
     mark.highlight { background: var(--highlight); color: #1a1a1a; border-radius: 2px; padding: 0 1px; font-weight: 600; }
     mark.highlight.current { background: var(--highlight-active); color: #fff; box-shadow: 0 0 0 2px rgba(255,149,0,0.5); }
 
-    @media (max-width: 640px) {
-      .sidebar { width: 200px; }
-      .topbar-title span { display: none; }
+    /* Mobile adjustments */
+    @media (max-width: 767px) {
+      .topbar-title span:first-of-type { display: none; }
+      .bubble { max-width: 88%; }
+      .msg-row { padding: 2px 8px; }
+      .search-counter { min-width: 48px; font-size: 10px; }
+      .topbar { gap: 6px; padding: 8px 10px; }
     }
   </style>
 </head>
 <body>
 <div class="app">
-  <!-- Sidebar: years -->
-  <aside class="sidebar">
+  <!-- Sidebar overlay (mobile only) -->
+  <div id="sidebar-overlay" class="sidebar-overlay"></div>
+
+  <!-- Collapsible Sidebar -->
+  <aside id="sidebar" class="sidebar">
     <div class="sidebar-header">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="8" y1="2" x2="8" y2="6"></line><line x1="16" y1="2" x2="16" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
-      <span>CHAT ARCHIVE</span>
+      <span>📁 CHAT ARCHIVE</span>
+      <button id="close-sidebar-btn" class="close-sidebar-btn" aria-label="Close menu">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        Close
+      </button>
     </div>
     <ul class="file-list" id="file-list"></ul>
-    <div style="padding: 16px; font-size: 11px; color: #4a5568; border-top: 1px solid rgba(255,255,255,0.05); margin-top: auto;">
+    <div style="padding: 16px; font-size: 11px; color: #4a5568; border-top: 1px solid rgba(255,255,255,0.05);">
       📁 Select a year
     </div>
   </aside>
 
   <div class="main-area">
     <header class="topbar">
+      <button id="menu-toggle" class="menu-toggle" aria-label="Open menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="3" y1="6" x2="21" y2="6"/>
+          <line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
       <div class="topbar-title">
         <svg class="icon-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
@@ -379,7 +490,6 @@
   "use strict";
 
   // ========== CONFIGURATION ==========
-  // If you have index.json, it will be used. Otherwise, specify your years here:
   const YEARS = [2020, 2021, 2022, 2023, 2024, 2025, 2026];
   // ===================================
 
@@ -389,7 +499,6 @@
   let renderedUpTo = 0;
   let idleHandle = null;
 
-  // Search state
   let matches = [];
   let currentMatchIndex = 0;
   let searchTerm = "";
@@ -407,13 +516,56 @@
   const btnNext = document.getElementById("btn-next");
   const fileListEl = document.getElementById("file-list");
   const currentFileLabel = document.getElementById("current-file-label");
+  const sidebar = document.getElementById("sidebar");
+  const sidebarOverlay = document.getElementById("sidebar-overlay");
+  const menuToggle = document.getElementById("menu-toggle");
+  const closeSidebarBtn = document.getElementById("close-sidebar-btn");
+
+  // Sidebar functions (mobile)
+  function openSidebar() {
+    if (window.innerWidth < 768) {
+      sidebar.classList.add("open");
+      sidebarOverlay.classList.add("active");
+      document.body.style.overflow = "hidden";
+    }
+  }
+
+  function closeSidebar() {
+    if (window.innerWidth < 768) {
+      sidebar.classList.remove("open");
+      sidebarOverlay.classList.remove("active");
+      document.body.style.overflow = "";
+    }
+  }
+
+  function toggleSidebar() {
+    if (sidebar.classList.contains("open")) {
+      closeSidebar();
+    } else {
+      openSidebar();
+    }
+  }
+
+  // Close sidebar when clicking overlay
+  sidebarOverlay.addEventListener("click", closeSidebar);
+  menuToggle.addEventListener("click", toggleSidebar);
+  if (closeSidebarBtn) closeSidebarBtn.addEventListener("click", closeSidebar);
+
+  // On window resize, ensure sidebar state is correct
+  window.addEventListener("resize", () => {
+    if (window.innerWidth >= 768) {
+      sidebar.classList.remove("open");
+      sidebarOverlay.classList.remove("active");
+      document.body.style.overflow = "";
+    }
+  });
 
   // Rendering constants
   const INITIAL_BATCH = 280;
   const IDLE_BATCH = 500;
   const IDLE_DEADLINE = 38;
 
-  // ---------- Helper: decode columnar or legacy ----------
+  // ---------- Helper functions (unchanged from working version) ----------
   function decodeColumnar(raw) {
     if (Array.isArray(raw)) return raw;
     if (raw && raw.v === 1 && Array.isArray(raw.fields) && Array.isArray(raw.rows)) {
@@ -481,27 +633,22 @@
     const row = document.createElement("div");
     row.className = `msg-row ${isMe ? "me" : "other"}${chainTop ? " chain-top" : ""}`;
     row.dataset.index = idx;
-
     const bubble = document.createElement("div");
     bubble.className = "bubble";
-
     const sender = document.createElement("div");
     sender.className = "msg-sender";
     sender.textContent = msg.sender;
     bubble.appendChild(sender);
-
     if (msg.is_forwarded && msg.forwarded_from) {
       const fwd = document.createElement("div");
       fwd.className = "fwd-tag";
       fwd.textContent = `Forwarded from ${msg.forwarded_from}`;
       bubble.appendChild(fwd);
     }
-
     const textDiv = document.createElement("div");
     textDiv.className = "msg-text";
     textDiv.innerHTML = escapeHtml(msg.text || "");
     bubble.appendChild(textDiv);
-
     const footer = document.createElement("div");
     footer.className = "msg-footer";
     const timeSpan = document.createElement("span");
@@ -509,7 +656,6 @@
     timeSpan.textContent = formatTime(msg.timestamp);
     footer.appendChild(timeSpan);
     bubble.appendChild(footer);
-
     row.appendChild(bubble);
     return row;
   }
@@ -627,13 +773,11 @@
     searchTerm = rawTerm.trim();
     matches = [];
     currentMatchIndex = 0;
-
     if (!searchTerm) {
       searchCounter.textContent = "";
       setNavEnabled(false);
       return;
     }
-
     const lowerTerm = searchTerm.toLowerCase();
     for (let i = 0; i < currentMessages.length; i++) {
       if ((currentMessages[i].text || "").toLowerCase().includes(lowerTerm)) matches.push(i);
@@ -641,7 +785,6 @@
     updateCounter();
     setNavEnabled(matches.length > 0);
     if (matches.length === 0) return;
-
     applyHighlightsToRenderedMatches();
     activateMatch(0);
   }
@@ -687,7 +830,6 @@
   }
   function setNavEnabled(on) { btnPrev.disabled = !on; btnNext.disabled = !on; }
 
-  // ---------- LOAD CHAT FILE ----------
   async function loadChatFile(year) {
     const fileName = `chat_${year}.json`;
     resetRenderState();
@@ -702,10 +844,12 @@
     searchCounter.textContent = "";
     setNavEnabled(false);
     currentFileLabel.textContent = `Chat ${year}`;
+    // Auto-close sidebar on mobile after selection
+    closeSidebar();
 
     try {
       const res = await fetch(fileName);
-      if (!res.ok) throw new Error(`HTTP ${res.status} - file not found`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const raw = await res.json();
       currentMessages = decodeColumnar(raw);
       if (!currentMessages.length) throw new Error("Empty messages");
@@ -717,19 +861,15 @@
       loadingEl.hidden = true;
       if (searchInput.value.trim()) runSearch();
     } catch (err) {
-      console.error(`Failed to load ${fileName}:`, err);
+      console.error(err);
       loadingEl.hidden = true;
       errorEl.hidden = false;
-      const errorMsg = errorEl.querySelector("p");
-      if (errorMsg) errorMsg.innerHTML = `⚠️ Could not load ${fileName}. Make sure the file exists.`;
     }
   }
 
-  // ---------- Build sidebar from year array ----------
   async function buildSidebar() {
     fileListEl.innerHTML = "";
     let firstYear = null;
-
     for (const year of YEARS) {
       const li = document.createElement("li");
       const btn = document.createElement("button");
@@ -744,7 +884,6 @@
       fileListEl.appendChild(li);
       if (!firstYear) firstYear = year;
     }
-
     if (firstYear) {
       const firstBtn = fileListEl.querySelector(".file-item");
       if (firstBtn) firstBtn.classList.add("active");
@@ -755,7 +894,6 @@
     }
   }
 
-  // Event binding
   function bindEvents() {
     let deb;
     searchInput.addEventListener("input", () => {
