@@ -2,74 +2,807 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
-  <title>Chat Viewer</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chat Archive — Year Selector</title>
+  <style>
+    /* ─── Reset & Base ─────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #0e1621;
+      --bg-chat:     #17212b;
+      --sidebar-bg:  #0b1018;
+      --bubble-me:   #2b5278;
+      --bubble-me-hl:#3d6d9e;
+      --bubble-other:#182533;
+      --bubble-other-hl:#243444;
+      --name-me:     #71bafa;
+      --name-other:  #5eb5a6;
+      --text:        #e8eaed;
+      --text-dim:    #6c7883;
+      --topbar:      #17212b;
+      --topbar-border: #0d1823;
+      --input-bg:    #242f3d;
+      --input-focus: #2b3a4d;
+      --highlight:   #f4c542;
+      --highlight-active: #ff9500;
+      --radius:      12px;
+      --radius-sm:   6px;
+      --font:        -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 15px;
+      line-height: 1.5;
+      overflow: hidden;
+    }
+
+    /* ─── Layout: sidebar + main ─────────────────────────────────────── */
+    .app {
+      display: flex;
+      height: 100%;
+      width: 100%;
+    }
+
+    /* SIDEBAR — modern, compact, year-focused */
+    .sidebar {
+      width: 260px;
+      background: var(--sidebar-bg);
+      border-right: 1px solid var(--topbar-border);
+      display: flex;
+      flex-direction: column;
+      z-index: 110;
+      flex-shrink: 0;
+      overflow-y: auto;
+    }
+
+    .sidebar-header {
+      padding: 20px 16px 12px;
+      font-weight: 600;
+      font-size: 13px;
+      letter-spacing: 0.5px;
+      color: var(--name-me);
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .file-list {
+      list-style: none;
+      padding: 12px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .file-item {
+      padding: 10px 14px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text-dim);
+      transition: all 0.15s;
+      background: rgba(255,255,255,0.02);
+      border: none;
+      text-align: left;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+    }
+
+    .file-item:hover {
+      background: rgba(113, 186, 250, 0.12);
+      color: var(--text);
+    }
+
+    .file-item.active {
+      background: var(--bubble-me);
+      color: white;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+    }
+
+    .year-badge {
+      font-size: 13px;
+      font-weight: 600;
+      background: rgba(255,255,255,0.12);
+      width: 48px;
+      text-align: center;
+      padding: 3px 0;
+      border-radius: 20px;
+    }
+
+    .file-item.active .year-badge {
+      background: rgba(255,255,255,0.25);
+    }
+
+    /* Main area */
+    .main-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Top bar (inside main) */
+    .topbar {
+      background: var(--topbar);
+      border-bottom: 1px solid var(--topbar-border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 16px;
+      min-height: 56px;
+      flex-shrink: 0;
+    }
+
+    .topbar-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 16px;
+      color: var(--text);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .icon-chat {
+      width: 22px; height: 22px;
+      color: var(--name-me);
+    }
+
+    .search-bar {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--input-bg);
+      border-radius: 20px;
+      padding: 0 8px 0 14px;
+      transition: background 0.15s;
+    }
+
+    .search-bar:focus-within { background: var(--input-focus); }
+
+    #search-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font-size: 14px;
+      padding: 8px 0;
+      min-width: 0;
+    }
+
+    #search-input::placeholder { color: var(--text-dim); }
+
+    .search-counter {
+      font-size: 12px;
+      color: var(--text-dim);
+      white-space: nowrap;
+      min-width: 64px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .nav-btn {
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 5px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-dim);
+      transition: background 0.15s;
+      flex-shrink: 0;
+    }
+
+    .nav-btn svg { width: 17px; height: 17px; }
+    .nav-btn:not(:disabled):hover { background: rgba(255,255,255,0.08); color: var(--text); }
+    .nav-btn:disabled { opacity: 0.3; cursor: default; }
+
+    /* Chat container & scroll */
+    #chat-container {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      background: var(--bg-chat);
+      scroll-behavior: smooth;
+      position: relative;
+    }
+
+    #chat-container::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image: radial-gradient(circle, rgba(255,255,255,0.015) 1px, transparent 1px);
+      background-size: 28px 28px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    #messages {
+      position: relative;
+      z-index: 1;
+      padding: 16px 0 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    /* Loading / error states */
+    .loading-state, .error-state {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: var(--text-dim);
+      z-index: 2;
+      background: var(--bg-chat);
+    }
+
+    .loading-state[hidden], .error-state[hidden] { display: none; }
+
+    .spinner {
+      width: 36px; height: 36px;
+      border: 3px solid rgba(255,255,255,0.08);
+      border-top-color: var(--name-me);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .progress-wrap {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      z-index: 99;
+      background: transparent;
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--name-me), var(--name-other));
+      transition: width 0.2s ease;
+    }
+
+    /* Messages & bubbles */
+    .msg-row { display: flex; padding: 2px 16px; animation: fadeIn 0.08s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+    .msg-row.me { justify-content: flex-end; }
+    .msg-row.other { justify-content: flex-start; }
+
+    .bubble {
+      max-width: min(72%, 520px);
+      padding: 8px 12px 7px;
+      border-radius: var(--radius);
+      word-break: break-word;
+    }
+    .me .bubble { background: var(--bubble-me); border-bottom-right-radius: var(--radius-sm); }
+    .other .bubble { background: var(--bubble-other); border-bottom-left-radius: var(--radius-sm); }
+    .msg-row.active-match .bubble { box-shadow: 0 0 0 2px rgba(113,186,250,0.6); }
+    .msg-row.other.active-match .bubble { box-shadow: 0 0 0 2px rgba(94,181,166,0.6); }
+
+    .msg-sender { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+    .me .msg-sender { color: var(--name-me); }
+    .other .msg-sender { color: var(--name-other); }
+    .chain-top .msg-sender { display: none; }
+
+    .msg-text { font-size: 14px; line-height: 1.55; white-space: pre-wrap; }
+    .msg-footer { display: flex; justify-content: flex-end; margin-top: 3px; }
+    .msg-time { font-size: 11px; color: rgba(255,255,255,0.45); }
+    .fwd-tag { font-size: 11px; color: var(--name-other); margin-bottom: 4px; border-left: 2px solid var(--name-other); padding-left: 8px; }
+
+    .date-divider { display: flex; justify-content: center; padding: 12px 16px 8px; }
+    .date-divider span { background: rgba(255,255,255,0.06); padding: 4px 10px; border-radius: 10px; font-size: 12px; }
+
+    mark.highlight { background: var(--highlight); color: #1a1a1a; border-radius: 2px; padding: 0 1px; font-weight: 600; }
+    mark.highlight.current { background: var(--highlight-active); color: #fff; box-shadow: 0 0 0 2px rgba(255,149,0,0.5); }
+
+    @media (max-width: 640px) {
+      .sidebar { width: 200px; }
+      .topbar-title span { display: none; }
+    }
+  </style>
 </head>
 <body>
-
-  <header class="topbar">
-    <button id="menu-toggle" class="menu-toggle" aria-label="Menu">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <line x1="3" y1="12" x2="21" y2="12"/>
-        <line x1="3" y1="6" x2="21" y2="6"/>
-        <line x1="3" y1="18" x2="21" y2="18"/>
-      </svg>
-    </button>
-    <div class="topbar-title">
-      <svg class="icon-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-      </svg>
-      <span>Chat Archive</span>
-    </div>
-    <div class="search-bar">
-      <input
-        id="search-input"
-        type="text"
-        placeholder="Search messages…"
-        autocomplete="off"
-        spellcheck="false"
-      />
-      <div id="search-counter" class="search-counter"></div>
-      <button id="btn-prev" class="nav-btn" title="Previous" disabled>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
-      </button>
-      <button id="btn-next" class="nav-btn" title="Next" disabled>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-      </button>
-    </div>
-  </header>
-
-  <aside id="sidebar" class="sidebar">
+<div class="app">
+  <!-- Sidebar: years from index.json (dynamic) -->
+  <aside class="sidebar">
     <div class="sidebar-header">
-      <h3>Chat Files</h3>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="8" y1="2" x2="8" y2="6"></line><line x1="16" y1="2" x2="16" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+      <span>CHAT ARCHIVE</span>
     </div>
-    <div class="sidebar-stats">
-      <div id="total-messages">Loading...</div>
-    </div>
-    <div class="file-list" id="file-list">
-      <div class="loading-files">Loading files...</div>
+    <ul class="file-list" id="file-list"></ul>
+    <div style="padding: 16px; font-size: 11px; color: #4a5568; border-top: 1px solid rgba(255,255,255,0.05); margin-top: auto;">
+      📁 Select a year
     </div>
   </aside>
 
-  <div id="sidebar-overlay" class="sidebar-overlay"></div>
+  <div class="main-area">
+    <header class="topbar">
+      <div class="topbar-title">
+        <svg class="icon-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+        <span id="current-file-label">Loading...</span>
+      </div>
+      <div class="search-bar">
+        <input id="search-input" type="text" placeholder="Search messages…" autocomplete="off" />
+        <div id="search-counter" class="search-counter"></div>
+        <button id="btn-prev" class="nav-btn" title="Previous match" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+        </button>
+        <button id="btn-next" class="nav-btn" title="Next match" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+      </div>
+    </header>
 
-  <div id="progress-wrap" class="progress-wrap" hidden>
-    <div id="progress-bar" class="progress-bar"></div>
+    <div id="chat-container">
+      <div id="loading" class="loading-state">
+        <div class="spinner"></div>
+        <p>Loading messages…</p>
+      </div>
+      <div id="error" class="error-state" hidden>
+        <p>⚠️ Could not load chat file.</p>
+        <p class="error-hint">Make sure JSON files (chat_2020.json ... chat_2026.json) and index.json exist.</p>
+      </div>
+      <div id="messages" role="log" aria-label="Chat messages"></div>
+    </div>
+    <div id="progress-wrap" class="progress-wrap" hidden>
+      <div id="progress-bar" class="progress-bar"></div>
+    </div>
   </div>
+</div>
 
-  <main id="chat-container">
-    <div id="loading" class="loading-state">
-      <div class="spinner"></div>
-      <p>Loading messages…</p>
-    </div>
-    <div id="error" class="error-state" hidden>
-      <p>⚠️ Could not load chat file.</p>
-      <p class="error-hint">Make sure index.json exists</p>
-    </div>
-    <div id="messages"></div>
-  </main>
+<script>
+  "use strict";
 
-  <script src="script.js"></script>
+  // ---------- GLOBALS ----------
+  let currentMessages = [];      // message objects for active year file
+  let renderMeta = [];           // precomputed metadata per message
+  let renderedUpTo = 0;
+  let renderDone = false;
+  let idleHandle = null;
+
+  // Search state (per active file)
+  let matches = [];
+  let currentMatchIndex = 0;
+  let searchTerm = "";
+  let pendingJumpIndex = null;
+
+  // DOM elements
+  const messagesEl = document.getElementById("messages");
+  const loadingEl = document.getElementById("loading");
+  const errorEl = document.getElementById("error");
+  const progressBar = document.getElementById("progress-bar");
+  const progressWrap = document.getElementById("progress-wrap");
+  const searchInput = document.getElementById("search-input");
+  const searchCounter = document.getElementById("search-counter");
+  const btnPrev = document.getElementById("btn-prev");
+  const btnNext = document.getElementById("btn-next");
+  const fileListEl = document.getElementById("file-list");
+  const currentFileLabel = document.getElementById("current-file-label");
+
+  // Rendering constants
+  const INITIAL_BATCH = 280;
+  const IDLE_BATCH = 500;
+  const IDLE_DEADLINE = 38;
+
+  // ---------- helper: decode columnar or legacy ----------
+  function decodeColumnar(raw) {
+    if (Array.isArray(raw)) return raw;
+    if (raw && raw.v === 1 && Array.isArray(raw.fields) && Array.isArray(raw.rows)) {
+      const fields = raw.fields;
+      return raw.rows.map(row => {
+        const msg = {};
+        for (let i = 0; i < fields.length; i++) msg[fields[i]] = row[i] !== undefined ? row[i] : null;
+        if (msg.is_forwarded !== undefined) msg.is_forwarded = !!msg.is_forwarded;
+        return msg;
+      });
+    }
+    throw new Error("Invalid chat data format");
+  }
+
+  // timestamp helpers (same as original)
+  function parseTimestamp(ts) {
+    if (!ts) return null;
+    const m = ts.match(/^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2}):(\d{2})\s+UTC([+-]\d{2}:\d{2})$/);
+    if (!m) return null;
+    const [, dd, mo, yyyy, hh, mm, ss, tz] = m;
+    const d = new Date(`${yyyy}-${mo}-${dd}T${hh}:${mm}:${ss}${tz}`);
+    return isNaN(d) ? null : d;
+  }
+  function formatDate(ts) {
+    const d = parseTimestamp(ts);
+    if (!d) return ts ? ts.slice(0, 10) : "Unknown";
+    return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  }
+  function formatTime(ts) {
+    if (!ts) return "";
+    const m = ts.match(/(\d{2}:\d{2}):\d{2}/);
+    return m ? m[1] : "";
+  }
+
+  function isOwnMessage(sender) { return sender === "Amirhosein"; }
+  function escapeHtml(str) {
+    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  // Build render meta for currentMessages (date grouping + chain detection)
+  function buildRenderMetaForCurrent() {
+    let lastDate = null, lastSender = null;
+    renderMeta = currentMessages.map((msg, i) => {
+      const dateStr = formatDate(msg.timestamp);
+      const showDate = dateStr !== lastDate;
+      const isMe = isOwnMessage(msg.sender);
+      const chainTop = !showDate && (msg.sender === lastSender);
+      lastDate = dateStr;
+      lastSender = msg.sender;
+      return { dateStr, showDate, isMe, chainTop };
+    });
+  }
+
+  // DOM builders
+  function makeDateDivider(label) {
+    const div = document.createElement("div");
+    div.className = "date-divider";
+    const span = document.createElement("span");
+    span.textContent = label;
+    div.appendChild(span);
+    return div;
+  }
+
+  function makeMessageRow(msg, idx, isMe, chainTop) {
+    const row = document.createElement("div");
+    row.className = `msg-row ${isMe ? "me" : "other"}${chainTop ? " chain-top" : ""}`;
+    row.dataset.index = idx;
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+
+    const sender = document.createElement("div");
+    sender.className = "msg-sender";
+    sender.textContent = msg.sender;
+    bubble.appendChild(sender);
+
+    if (msg.is_forwarded && msg.forwarded_from) {
+      const fwd = document.createElement("div");
+      fwd.className = "fwd-tag";
+      fwd.textContent = `Forwarded from ${msg.forwarded_from}`;
+      bubble.appendChild(fwd);
+    }
+
+    const textDiv = document.createElement("div");
+    textDiv.className = "msg-text";
+    textDiv.innerHTML = escapeHtml(msg.text || "");
+    bubble.appendChild(textDiv);
+
+    const footer = document.createElement("div");
+    footer.className = "msg-footer";
+    const timeSpan = document.createElement("span");
+    timeSpan.className = "msg-time";
+    timeSpan.textContent = formatTime(msg.timestamp);
+    footer.appendChild(timeSpan);
+    bubble.appendChild(footer);
+
+    row.appendChild(bubble);
+    return row;
+  }
+
+  function renderBatch(from, to) {
+    if (from >= to) return;
+    const frag = document.createDocumentFragment();
+    for (let i = from; i < to; i++) {
+      const msg = currentMessages[i];
+      const meta = renderMeta[i];
+      if (meta.showDate) frag.appendChild(makeDateDivider(meta.dateStr));
+      frag.appendChild(makeMessageRow(msg, i, meta.isMe, meta.chainTop));
+    }
+    messagesEl.appendChild(frag);
+    renderedUpTo = to;
+    if (progressBar && currentMessages.length) {
+      const pct = Math.round((renderedUpTo / currentMessages.length) * 100);
+      progressBar.style.width = pct + "%";
+      if (renderedUpTo >= currentMessages.length && progressWrap) {
+        setTimeout(() => { if (progressWrap) progressWrap.hidden = true; }, 300);
+      }
+    }
+    // handle pending jump after rendering
+    if (pendingJumpIndex !== null && pendingJumpIndex < renderedUpTo) {
+      const jump = pendingJumpIndex;
+      pendingJumpIndex = null;
+      finishActivateMatch(jump);
+    }
+  }
+
+  const requestIdleCompat = (typeof requestIdleCallback === "function")
+    ? (cb) => requestIdleCallback(cb, { timeout: 500 })
+    : (cb) => setTimeout(() => cb({ timeRemaining: () => 0 }), 16);
+  const cancelIdleCompat = (typeof cancelIdleCallback === "function") ? (id) => cancelIdleCallback(id) : clearTimeout;
+
+  function scheduleIdleRender() {
+    const tick = (deadline) => {
+      const hasTime = deadline.timeRemaining ? () => deadline.timeRemaining() > IDLE_DEADLINE : () => true;
+      const end = Math.min(renderedUpTo + IDLE_BATCH, currentMessages.length);
+      renderBatch(renderedUpTo, end);
+      if (renderedUpTo < currentMessages.length) idleHandle = requestIdleCompat(tick);
+      else { renderDone = true; if (progressWrap) progressWrap.hidden = true; }
+    };
+    idleHandle = requestIdleCompat(tick);
+  }
+
+  function renderUpTo(targetIndex) {
+    if (targetIndex < renderedUpTo) return;
+    if (idleHandle) { cancelIdleCompat(idleHandle); idleHandle = null; }
+    const end = Math.min(targetIndex + 1, currentMessages.length);
+    renderBatch(renderedUpTo, end);
+    if (renderedUpTo < currentMessages.length) scheduleIdleRender();
+    else if (progressWrap) progressWrap.hidden = true;
+  }
+
+  function resetRenderState() {
+    if (idleHandle) cancelIdleCompat(idleHandle);
+    idleHandle = null;
+    messagesEl.innerHTML = "";
+    renderedUpTo = 0;
+    renderDone = false;
+    pendingJumpIndex = null;
+    if (progressWrap) progressWrap.hidden = false;
+    if (progressBar) progressBar.style.width = "0%";
+  }
+
+  // Highlight & search logic
+  function highlightText(text, term, isCurrent) {
+    if (!term) return escapeHtml(text);
+    const escaped = escapeHtml(text);
+    const lowerSrc = escaped.toLowerCase();
+    const lowerTerm = escapeHtml(term).toLowerCase();
+    const len = lowerTerm.length;
+    let result = "", cursor = 0, first = true;
+    while (cursor < escaped.length) {
+      const pos = lowerSrc.indexOf(lowerTerm, cursor);
+      if (pos === -1) { result += escaped.slice(cursor); break; }
+      result += escaped.slice(cursor, pos);
+      const cls = (isCurrent && first) ? "highlight current" : "highlight";
+      result += `<mark class="${cls}">${escaped.slice(pos, pos + len)}</mark>`;
+      first = false;
+      cursor = pos + len;
+    }
+    return result;
+  }
+
+  function clearHighlightsAndReset() {
+    document.querySelectorAll(".msg-row.active-match").forEach(el => el.classList.remove("active-match"));
+    for (let i = 0; i < renderedUpTo; i++) {
+      const row = messagesEl.querySelector(`[data-index="${i}"]`);
+      if (row && currentMessages[i]) {
+        const textEl = row.querySelector(".msg-text");
+        if (textEl) textEl.innerHTML = escapeHtml(currentMessages[i].text || "");
+      }
+    }
+  }
+
+  function applyHighlightsToRenderedMatches() {
+    if (!searchTerm) return;
+    for (let mi = 0; mi < matches.length; mi++) {
+      const idx = matches[mi];
+      if (idx >= renderedUpTo) continue;
+      const row = messagesEl.querySelector(`[data-index="${idx}"]`);
+      if (row) {
+        const textEl = row.querySelector(".msg-text");
+        if (textEl) {
+          const activeFlag = (mi === currentMatchIndex);
+          textEl.innerHTML = highlightText(currentMessages[idx].text || "", searchTerm, activeFlag);
+        }
+        if (mi === currentMatchIndex) row.classList.add("active-match");
+        else row.classList.remove("active-match");
+      }
+    }
+  }
+
+  function runSearch() {
+    clearHighlightsAndReset();
+    const rawTerm = searchInput.value;
+    searchTerm = rawTerm.trim();
+    matches = [];
+    currentMatchIndex = 0;
+
+    if (!searchTerm) {
+      searchCounter.textContent = "";
+      setNavEnabled(false);
+      return;
+    }
+
+    const lowerTerm = searchTerm.toLowerCase();
+    for (let i = 0; i < currentMessages.length; i++) {
+      if ((currentMessages[i].text || "").toLowerCase().includes(lowerTerm)) matches.push(i);
+    }
+    updateCounter();
+    setNavEnabled(matches.length > 0);
+    if (matches.length === 0) return;
+
+    applyHighlightsToRenderedMatches();
+    activateMatch(0);
+  }
+
+  function activateMatch(newIdx) {
+    if (matches.length === 0) return;
+    if (currentMatchIndex >= 0 && currentMatchIndex < matches.length) {
+      const prevIdx = matches[currentMatchIndex];
+      const prevRow = messagesEl.querySelector(`[data-index="${prevIdx}"]`);
+      if (prevRow) {
+        prevRow.classList.remove("active-match");
+        const t = prevRow.querySelector(".msg-text");
+        if (t) t.innerHTML = highlightText(currentMessages[prevIdx].text || "", searchTerm, false);
+      }
+    }
+    currentMatchIndex = newIdx;
+    const targetIdx = matches[currentMatchIndex];
+    if (targetIdx >= renderedUpTo) {
+      pendingJumpIndex = targetIdx;
+      renderUpTo(targetIdx);
+      applyHighlightsToRenderedMatches();
+      return;
+    }
+    finishActivateMatch(targetIdx);
+  }
+
+  function finishActivateMatch(idx) {
+    const row = messagesEl.querySelector(`[data-index="${idx}"]`);
+    if (!row) return;
+    row.classList.add("active-match");
+    const textEl = row.querySelector(".msg-text");
+    if (textEl) textEl.innerHTML = highlightText(currentMessages[idx].text || "", searchTerm, true);
+    row.scrollIntoView({ behavior: "smooth", block: "center" });
+    updateCounter();
+  }
+
+  function nextMatch() { if (matches.length) activateMatch((currentMatchIndex + 1) % matches.length); }
+  function prevMatch() { if (matches.length) activateMatch((currentMatchIndex - 1 + matches.length) % matches.length); }
+  function updateCounter() {
+    if (!searchTerm) searchCounter.textContent = "";
+    else if (!matches.length) searchCounter.textContent = "No results";
+    else searchCounter.textContent = `${currentMatchIndex + 1} / ${matches.length}`;
+  }
+  function setNavEnabled(on) { btnPrev.disabled = !on; btnNext.disabled = !on; }
+
+  // ---------- LOAD CHAT FILE (year-based) ----------
+  async function loadChatFile(fileName, yearLabel) {
+    resetRenderState();
+    errorEl.hidden = true;
+    loadingEl.hidden = false;
+    messagesEl.innerHTML = "";
+    currentMessages = [];
+    renderMeta = [];
+    matches = [];
+    searchTerm = "";
+    searchInput.value = "";
+    searchCounter.textContent = "";
+    setNavEnabled(false);
+    currentFileLabel.textContent = yearLabel || fileName.replace(/\.json$/i, "");
+
+    try {
+      const res = await fetch(fileName);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const raw = await res.json();
+      currentMessages = decodeColumnar(raw);
+      if (!currentMessages.length) throw new Error("Empty messages");
+      buildRenderMetaForCurrent();
+      const initial = Math.min(INITIAL_BATCH, currentMessages.length);
+      renderBatch(0, initial);
+      if (renderedUpTo < currentMessages.length) scheduleIdleRender();
+      else if (progressWrap) progressWrap.hidden = true;
+      loadingEl.hidden = true;
+      if (searchInput.value.trim()) runSearch();
+    } catch (err) {
+      console.error(err);
+      loadingEl.hidden = true;
+      errorEl.hidden = false;
+    }
+  }
+
+  // ---------- Build sidebar from index.json (expects year list: chat_2020.json ... chat_2026.json) ----------
+  async function buildSidebar() {
+    try {
+      const indexRes = await fetch("index.json");
+      if (!indexRes.ok) throw new Error("index.json not found");
+      const files = await indexRes.json();
+      // Support both array of strings or array of objects
+      let fileEntries = [];
+      if (Array.isArray(files)) {
+        fileEntries = files.map(f => {
+          if (typeof f === "string") return { file: f, label: extractYearLabel(f) };
+          return { file: f.file, label: f.label || extractYearLabel(f.file) };
+        });
+      } else {
+        throw new Error("index.json must be an array");
+      }
+
+      if (fileEntries.length === 0) throw new Error("No files listed");
+
+      fileListEl.innerHTML = "";
+      let firstFile = null;
+
+      for (const entry of fileEntries) {
+        const filePath = entry.file;
+        const label = entry.label;
+        const li = document.createElement("li");
+        const btn = document.createElement("button");
+        btn.className = "file-item";
+        // Extract year for badge if looks like chat_2020.json
+        let yearMatch = filePath.match(/chat_(\d{4})\.json/);
+        let badgeText = yearMatch ? yearMatch[1] : (label.length > 6 ? label.slice(0,6) : label);
+        btn.innerHTML = `<span class="year-badge">${escapeHtml(badgeText)}</span><span class="file-name">${escapeHtml(label)}</span>`;
+        btn.addEventListener("click", (e) => {
+          document.querySelectorAll(".file-item").forEach(el => el.classList.remove("active"));
+          btn.classList.add("active");
+          loadChatFile(filePath, label);
+        });
+        li.appendChild(btn);
+        fileListEl.appendChild(li);
+        if (!firstFile) firstFile = { filePath, label };
+      }
+
+      if (firstFile) {
+        const firstBtn = fileListEl.querySelector(".file-item");
+        if (firstBtn) firstBtn.classList.add("active");
+        await loadChatFile(firstFile.filePath, firstFile.label);
+      } else {
+        throw new Error("No valid files");
+      }
+    } catch (err) {
+      console.error(err);
+      loadingEl.hidden = true;
+      errorEl.hidden = false;
+      const errMsg = errorEl.querySelector("p");
+      if (errMsg) errMsg.innerHTML = "⚠️ Could not load <code>index.json</code>. Expected format: <code>[\"chat_2020.json\", \"chat_2021.json\", ...]</code>";
+    }
+  }
+
+  function extractYearLabel(filename) {
+    const match = filename.match(/chat_(\d{4})\.json/);
+    if (match) return `Chat ${match[1]}`;
+    return filename.replace(/\.json$/i, "").replace(/_/g, " ");
+  }
+
+  // Event binding
+  function bindEvents() {
+    let deb;
+    searchInput.addEventListener("input", () => {
+      clearTimeout(deb);
+      deb = setTimeout(() => runSearch(), 160);
+    });
+    searchInput.addEventListener("keydown", e => {
+      if (e.key === "Enter") { e.preventDefault(); e.shiftKey ? prevMatch() : nextMatch(); }
+      if (e.key === "Escape") { searchInput.value = ""; runSearch(); }
+    });
+    btnNext.addEventListener("click", nextMatch);
+    btnPrev.addEventListener("click", prevMatch);
+  }
+
+  bindEvents();
+  buildSidebar();
+</script>
 </body>
 </html>
