@@ -1,45 +1,42 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   Telegram Chat Viewer — script.js
-   Architecture:
-     chat.min.json  →  allMessages[]  →  DOM  (one-way data flow)
-     Search         →  runs on allMessages[] only, never the DOM
-     Rendering      →  chunked progressive via requestIdleCallback / setTimeout
-                       so the page is interactive within ~100ms of data load
-
-   Data format:
-     Expects the columnar format produced by convert.py:
-       { "v":1, "fields":[...], "rows":[[...], ...] }
-     Falls back to the legacy array-of-objects format automatically.
+   Telegram Chat Viewer — script.js (Multi-File Version)
+   Features:
+     - Multi-file chat archive support (split by year or custom)
+     - Sidebar navigation with file list
+     - Search within current file or across all files
+     - Lazy loading for mobile performance
+     - Chunked progressive rendering
    ═══════════════════════════════════════════════════════════════════════ */
 
 "use strict";
 
 // ── Tuning constants ───────────────────────────────────────────────────
-const INITIAL_BATCH  = 300;   // messages rendered synchronously on boot
-const IDLE_BATCH     = 500;   // messages per idle callback chunk
-const IDLE_DEADLINE  = 40;    // ms budget per idle chunk (leave slack for browser)
+const INITIAL_BATCH  = 200;   // messages rendered synchronously on boot
+const IDLE_BATCH     = 300;   // messages per idle callback chunk (reduced for mobile)
+const IDLE_DEADLINE  = 30;    // ms budget per idle chunk
 
 // ── Global state ───────────────────────────────────────────────────────
-let allMessages       = [];   // full dataset — never mutated
-let renderedUpTo      = 0;    // index of last rendered message + 1
-let renderDone        = false;// true once all messages are in the DOM
+let currentFile      = null;   // Current loaded file metadata
+let allMessages      = [];     // full dataset of current file
+let renderedUpTo     = 0;      // index of last rendered message + 1
+let renderDone       = false;  // true once all messages are in the DOM
+let renderMeta       = [];     // parallel array to allMessages
+let fileIndex        = null;   // index.json contents
+let availableFiles   = [];     // list of available chat files
 
-// Pre-computed per-message render context (date label, isMe, chainTop)
-// Built once after data loads so rendering loops stay cheap.
-let renderMeta        = [];   // parallel array to allMessages
-
-// Search state — always operates on allMessages[], not the DOM
+// Search state
 let matches           = [];
 let currentMatchIndex = 0;
 let searchTerm        = "";
-
-// Pending "jump to match" — set when activateMatch targets an unrendered msg
 let pendingJumpIndex  = null;
+let searchScope       = "current"; // "current" or "all"
+let allMessagesCache  = null;      // Cache for cross-file search
 
-// Background render scheduler handle (so we can cancel on demand)
+// Background render scheduler handle
 let idleHandle        = null;
+let currentRenderFile = null;      // Track which file is being rendered
 
-// ── DOM refs ───────────────────────────────────────────────────────────
+// DOM refs
 const messagesEl    = document.getElementById("messages");
 const loadingEl     = document.getElementById("loading");
 const errorEl       = document.getElementById("error");
@@ -49,24 +46,17 @@ const searchInput   = document.getElementById("search-input");
 const searchCounter = document.getElementById("search-counter");
 const btnPrev       = document.getElementById("btn-prev");
 const btnNext       = document.getElementById("btn-next");
+const sidebar       = document.getElementById("sidebar");
+const menuToggle    = document.getElementById("menu-toggle");
+const sidebarOverlay= document.getElementById("sidebar-overlay");
+const fileListEl    = document.getElementById("file-list");
+const totalMessagesSpan = document.getElementById("total-messages");
+const currentFileNameSpan = document.getElementById("current-file-name");
 
 // ── Columnar decoder ───────────────────────────────────────────────────
-/**
- * Accepts either:
- *   - Columnar format: { v:1, fields:[...], rows:[[...], ...] }
- *   - Legacy format:   [ { id, sender, ... }, ... ]
- *
- * Always returns a plain array of message objects so the rest of the
- * code never needs to know which format was loaded.
- *
- * Boolean optimisation: is_forwarded is stored as 0/1 in columnar format.
- * We cast it back to boolean here so downstream code is unchanged.
- */
 function decodeColumnar(raw) {
-  // Legacy array-of-objects — pass through unchanged
   if (Array.isArray(raw)) return raw;
 
-  // Columnar format
   if (raw && raw.v === 1 && Array.isArray(raw.fields) && Array.isArray(raw.rows)) {
     const fields = raw.fields;
     const fLen   = fields.length;
@@ -75,7 +65,6 @@ function decodeColumnar(raw) {
       for (let f = 0; f < fLen; f++) {
         msg[fields[f]] = row[f] !== undefined ? row[f] : null;
       }
-      // Restore boolean
       msg.is_forwarded = !!msg.is_forwarded;
       return msg;
     });
@@ -84,44 +73,148 @@ function decodeColumnar(raw) {
   throw new Error("Unrecognised chat data format.");
 }
 
-// ── Boot ───────────────────────────────────────────────────────────────
-(async () => {
+// ── Load File Index ────────────────────────────────────────────────────
+async function loadFileIndex() {
   try {
-    const res = await fetch("chat.min.json");
+    const res = await fetch("chunks/index.json");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    fileIndex = await res.json();
+    availableFiles = fileIndex.files;
+    
+    // Update sidebar with file list
+    renderFileList();
+    
+    // Load first file by default
+    if (availableFiles.length > 0) {
+      await loadChatFile(availableFiles[0]);
+    } else {
+      throw new Error("No chat files found");
+    }
+  } catch (e) {
+    console.error("Failed to load index:", e);
+    loadingEl.hidden = true;
+    errorEl.hidden = false;
+    errorEl.querySelector("p").innerHTML = "⚠️ Could not load <code>chunks/index.json</code><br>Run <code>python3 split_chat.py</code> first";
+  }
+}
+
+// ── Load Specific Chat File ────────────────────────────────────────────
+async function loadChatFile(file) {
+  // Cancel any ongoing rendering
+  if (idleHandle !== null) {
+    cancelIdleCallbackCompat(idleHandle);
+    idleHandle = null;
+  }
+  
+  // Show loading state
+  loadingEl.hidden = false;
+  errorEl.hidden = true;
+  messagesEl.innerHTML = "";
+  renderedUpTo = 0;
+  renderDone = false;
+  allMessages = [];
+  renderMeta = [];
+  
+  // Clear search
+  searchTerm = "";
+  searchInput.value = "";
+  matches = [];
+  updateCounter();
+  
+  // Update UI
+  currentFile = file;
+  currentFileNameSpan.textContent = file.name;
+  
+  // Highlight active file in sidebar
+  document.querySelectorAll('.file-item').forEach(el => {
+    el.classList.remove('active');
+    if (el.dataset.filename === file.filename) {
+      el.classList.add('active');
+    }
+  });
+  
+  try {
+    const res = await fetch(`chunks/${file.filename}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const raw = await res.json();
     allMessages = decodeColumnar(raw);
-  } catch (e) {
-    console.error("Failed to load chat.min.json:", e);
+    
+    // Update total messages display
+    totalMessagesSpan.textContent = `${allMessages.length.toLocaleString()} messages (${file.name})`;
+    
+    // Pre-compute metadata
+    buildRenderMeta();
+    
     loadingEl.hidden = true;
-    errorEl.hidden   = false;
-    return;
+    
+    // Render first batch
+    renderBatch(0, Math.min(INITIAL_BATCH, allMessages.length));
+    
+    // Schedule remaining
+    if (renderedUpTo < allMessages.length) {
+      if (progressWrap) progressWrap.hidden = false;
+      scheduleIdleRender();
+    } else {
+      markRenderComplete();
+    }
+  } catch (e) {
+    console.error(`Failed to load ${file.filename}:`, e);
+    loadingEl.hidden = true;
+    errorEl.hidden = false;
+    errorEl.querySelector("p").innerHTML = `⚠️ Could not load ${file.name}`;
   }
+}
 
-  // Pre-compute metadata for every message (O(n) single pass, very fast)
-  buildRenderMeta();
+// ── Render File List in Sidebar ────────────────────────────────────────
+function renderFileList() {
+  if (!fileListEl) return;
+  
+  fileListEl.innerHTML = "";
+  
+  availableFiles.forEach(file => {
+    const fileItem = document.createElement("div");
+    fileItem.className = "file-item";
+    fileItem.dataset.filename = file.filename;
+    
+    fileItem.innerHTML = `
+      <div class="file-info">
+        <div class="file-name">${escapeHtml(file.name)}</div>
+        <div class="file-meta">${file.message_count.toLocaleString()} messages</div>
+      </div>
+      <div class="file-badge">📁</div>
+    `;
+    
+    fileItem.addEventListener("click", () => {
+      loadChatFile(file);
+      // Close sidebar on mobile after selection
+      if (window.innerWidth <= 768) {
+        closeSidebar();
+      }
+    });
+    
+    fileListEl.appendChild(fileItem);
+  });
+}
 
-  loadingEl.hidden = true;
-
-  // Render first batch synchronously — user sees messages immediately
-  renderBatch(0, Math.min(INITIAL_BATCH, allMessages.length));
-
-  // Enable search right away (full dataset is in memory)
-  bindEvents();
-
-  // Schedule remaining messages in the background
-  if (renderedUpTo < allMessages.length) {
-    if (progressWrap) progressWrap.hidden = false;
-    scheduleIdleRender();
+// ── Sidebar Functions ──────────────────────────────────────────────────
+function toggleSidebar() {
+  sidebar.classList.toggle("open");
+  if (sidebar.classList.contains("open")) {
+    if (sidebarOverlay) sidebarOverlay.hidden = false;
+    document.body.classList.add("sidebar-open");
   } else {
-    markRenderComplete();
+    if (sidebarOverlay) sidebarOverlay.hidden = true;
+    document.body.classList.remove("sidebar-open");
   }
-})();
+}
+
+function closeSidebar() {
+  sidebar.classList.remove("open");
+  if (sidebarOverlay) sidebarOverlay.hidden = true;
+  document.body.classList.remove("sidebar-open");
+}
 
 // ── Metadata pre-computation ───────────────────────────────────────────
-// One O(n) pass to resolve date labels, isMe, and chain detection.
-// This lets renderBatch() stay allocation-light with no repeated string ops.
-
 function buildRenderMeta() {
   let lastDate   = null;
   let lastSender = null;
@@ -140,13 +233,10 @@ function buildRenderMeta() {
 }
 
 // ── Chunked rendering ──────────────────────────────────────────────────
-
-/**
- * Renders messages [from, to) into the DOM.
- * Uses a DocumentFragment for a single reflow per call.
- */
 function renderBatch(from, to) {
   if (from >= to) return;
+  
+  currentRenderFile = currentFile;
 
   const frag = document.createDocumentFragment();
 
@@ -165,7 +255,7 @@ function renderBatch(from, to) {
   renderedUpTo = to;
   updateProgressBar();
 
-  // If a search jump was waiting for this range, action it now
+  // If a search jump was waiting for this range
   if (pendingJumpIndex !== null && pendingJumpIndex < renderedUpTo) {
     const jumpIdx = pendingJumpIndex;
     pendingJumpIndex = null;
@@ -173,14 +263,11 @@ function renderBatch(from, to) {
   }
 }
 
-/**
- * Schedules background rendering via requestIdleCallback (or setTimeout fallback).
- * Each callback renders up to IDLE_BATCH messages if there's deadline budget,
- * then re-schedules itself until all messages are rendered.
- */
 function scheduleIdleRender() {
   const tick = (deadline) => {
-    // deadline.timeRemaining() is 0 when using the setTimeout fallback
+    // Stop if file changed during rendering
+    if (currentRenderFile !== currentFile) return;
+    
     const hasTime = deadline.timeRemaining
       ? () => deadline.timeRemaining() > IDLE_DEADLINE
       : () => true;
@@ -188,9 +275,9 @@ function scheduleIdleRender() {
     const end = Math.min(renderedUpTo + IDLE_BATCH, allMessages.length);
     renderBatch(renderedUpTo, end);
 
-    if (renderedUpTo < allMessages.length) {
+    if (renderedUpTo < allMessages.length && currentRenderFile === currentFile) {
       idleHandle = requestIdleCallbackCompat(tick);
-    } else {
+    } else if (renderedUpTo >= allMessages.length) {
       markRenderComplete();
     }
   };
@@ -198,14 +285,9 @@ function scheduleIdleRender() {
   idleHandle = requestIdleCallbackCompat(tick);
 }
 
-/**
- * Force-render all messages up to (and including) targetIndex synchronously.
- * Called when a search match targets an unrendered message.
- */
 function renderUpTo(targetIndex) {
-  if (targetIndex < renderedUpTo) return; // already rendered
+  if (targetIndex < renderedUpTo) return;
 
-  // Cancel any in-flight idle render — we're doing it synchronously now
   if (idleHandle !== null) {
     cancelIdleCallbackCompat(idleHandle);
     idleHandle = null;
@@ -214,7 +296,6 @@ function renderUpTo(targetIndex) {
   const end = Math.min(targetIndex + 1, allMessages.length);
   renderBatch(renderedUpTo, end);
 
-  // Re-schedule the rest in background (from where we left off)
   if (renderedUpTo < allMessages.length) {
     scheduleIdleRender();
   } else {
@@ -232,13 +313,11 @@ function updateProgressBar() {
   const pct = Math.round((renderedUpTo / allMessages.length) * 100);
   progressBar.style.width = pct + "%";
   if (pct >= 100 && progressWrap) {
-    // small delay so the bar visually completes before hiding
     setTimeout(() => { progressWrap.hidden = true; }, 400);
   }
 }
 
-// ── requestIdleCallback compatibility shim ─────────────────────────────
-
+// ── requestIdleCallback compatibility ──────────────────────────────────
 const requestIdleCallbackCompat = (typeof requestIdleCallback === "function")
   ? (cb) => requestIdleCallback(cb, { timeout: 500 })
   : (cb) => setTimeout(() => cb({ timeRemaining: () => 0 }), 16);
@@ -248,7 +327,6 @@ const cancelIdleCallbackCompat = (typeof cancelIdleCallback === "function")
   : (id) => clearTimeout(id);
 
 // ── DOM builders ───────────────────────────────────────────────────────
-
 function makeMessageRow(msg, index, isMe, chainTop) {
   const row = document.createElement("div");
   row.className = `msg-row ${isMe ? "me" : "other"}${chainTop ? " chain-top" : ""}`;
@@ -295,16 +373,14 @@ function makeDateDivider(label) {
   return div;
 }
 
-// ── Search ─────────────────────────────────────────────────────────────
-// Always scans allMessages[] — works regardless of render progress.
-
-function runSearch(term) {
+// ── Search with Scope Support ──────────────────────────────────────────
+async function runSearch(term) {
   clearHighlights();
 
-  searchTerm        = term.trim();
-  matches           = [];
+  searchTerm = term.trim();
+  matches = [];
   currentMatchIndex = 0;
-  pendingJumpIndex  = null;
+  pendingJumpIndex = null;
 
   if (!searchTerm) {
     updateCounter();
@@ -312,52 +388,122 @@ function runSearch(term) {
     return;
   }
 
-  const lower = searchTerm.toLowerCase();
+  // Get search scope from radio buttons
+  const scopeRadio = document.querySelector('input[name="search-scope"]:checked');
+  searchScope = scopeRadio ? scopeRadio.value : "current";
 
-  // Full dataset scan — O(n) string search
-  for (let i = 0; i < allMessages.length; i++) {
-    if ((allMessages[i].text || "").toLowerCase().includes(lower)) {
-      matches.push(i);
+  if (searchScope === "current" && currentFile) {
+    // Search only current file
+    const lower = searchTerm.toLowerCase();
+    for (let i = 0; i < allMessages.length; i++) {
+      if ((allMessages[i].text || "").toLowerCase().includes(lower)) {
+        matches.push(i);
+      }
+    }
+    updateCounter();
+    setNavEnabled(matches.length > 0);
+    
+    if (matches.length > 0) {
+      applyHighlightsToRenderedMatches();
+      activateMatch(0);
+    }
+  } else if (searchScope === "all") {
+    // Search across all files (show warning for large datasets)
+    if (allMessagesCache === null) {
+      await loadAllMessagesForSearch();
+    }
+    
+    const lower = searchTerm.toLowerCase();
+    const results = [];
+    
+    for (const [fileIdx, file] of availableFiles.entries()) {
+      const messages = allMessagesCache[fileIdx];
+      for (let i = 0; i < messages.length; i++) {
+        if ((messages[i].text || "").toLowerCase().includes(lower)) {
+          results.push({
+            fileIndex: fileIdx,
+            messageIndex: i,
+            file: file,
+            message: messages[i]
+          });
+        }
+      }
+    }
+    
+    // Store cross-file matches with file info
+    matches = results;
+    updateCounter();
+    setNavEnabled(matches.length > 0);
+    
+    if (matches.length > 0) {
+      // Jump to first match (may need to switch files)
+      await activateCrossFileMatch(0);
     }
   }
-
-  updateCounter();
-  setNavEnabled(matches.length > 0);
-
-  if (matches.length === 0) return;
-
-  // Highlight all already-rendered matches
-  applyHighlightsToRenderedMatches();
-
-  // Jump to first match (may trigger renderUpTo if not yet rendered)
-  activateMatch(0);
 }
 
-/**
- * Apply non-active highlight markup to every match whose row is already in DOM.
- * Skips unrendered rows silently — they'll get highlighted when rendered
- * (we re-apply after renderBatch if a pending jump caused sync rendering).
- */
+async function loadAllMessagesForSearch() {
+  console.log("Loading all files for cross-file search...");
+  allMessagesCache = [];
+  
+  for (const file of availableFiles) {
+    const res = await fetch(`chunks/${file.filename}`);
+    const raw = await res.json();
+    const messages = decodeColumnar(raw);
+    allMessagesCache.push(messages);
+  }
+  
+  console.log(`Loaded ${allMessagesCache.length} files for search`);
+}
+
+async function activateCrossFileMatch(newIndex) {
+  if (newIndex < 0 || newIndex >= matches.length) return;
+  
+  currentMatchIndex = newIndex;
+  const match = matches[currentMatchIndex];
+  
+  // Switch to the correct file if needed
+  if (currentFile !== match.file) {
+    await loadChatFile(match.file);
+    // Wait a bit for rendering
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  
+  // Now activate the message in the loaded file
+  if (match.messageIndex < renderedUpTo) {
+    finishActivateMatch(match.messageIndex);
+  } else {
+    pendingJumpIndex = match.messageIndex;
+    renderUpTo(match.messageIndex);
+  }
+  
+  updateCounter();
+}
+
 function applyHighlightsToRenderedMatches() {
-  for (let mi = 0; mi < matches.length; mi++) {
-    const idx = matches[mi];
-    if (idx >= renderedUpTo) continue; // not yet rendered
-    const row = getRow(idx);
-    if (!row) continue;
-    const textEl = row.querySelector(".msg-text");
-    if (textEl) textEl.innerHTML = highlightText(allMessages[idx].text || "", searchTerm, false);
+  if (searchScope === "current") {
+    for (let mi = 0; mi < matches.length; mi++) {
+      const idx = matches[mi];
+      if (idx >= renderedUpTo) continue;
+      const row = getRow(idx);
+      if (!row) continue;
+      const textEl = row.querySelector(".msg-text");
+      if (textEl) textEl.innerHTML = highlightText(allMessages[idx].text || "", searchTerm, false);
+    }
   }
 }
 
 function activateMatch(newIndex) {
+  if (matches.length === 0) return;
+  
   // Deactivate previous
-  if (matches.length > 0) {
-    const prevIdx = matches[currentMatchIndex];
-    const prevRow = getRow(prevIdx);
-    if (prevRow) {
-      prevRow.classList.remove("active-match");
-      const textEl = prevRow.querySelector(".msg-text");
-      if (textEl) textEl.innerHTML = highlightText(allMessages[prevIdx].text || "", searchTerm, false);
+  const prevIdx = matches[currentMatchIndex];
+  const prevRow = getRow(prevIdx);
+  if (prevRow) {
+    prevRow.classList.remove("active-match");
+    const textEl = prevRow.querySelector(".msg-text");
+    if (textEl && searchScope === "current") {
+      textEl.innerHTML = highlightText(allMessages[prevIdx].text || "", searchTerm, false);
     }
   }
 
@@ -365,11 +511,8 @@ function activateMatch(newIndex) {
   const idx = matches[currentMatchIndex];
 
   if (idx >= renderedUpTo) {
-    // Target message not yet in DOM — render up to it synchronously,
-    // then finalize in finishActivateMatch (called from renderBatch).
     pendingJumpIndex = idx;
     renderUpTo(idx);
-    // After renderUpTo, re-apply highlights to newly rendered range
     applyHighlightsToRenderedMatches();
     return;
   }
@@ -383,7 +526,9 @@ function finishActivateMatch(idx) {
 
   row.classList.add("active-match");
   const textEl = row.querySelector(".msg-text");
-  if (textEl) textEl.innerHTML = highlightText(allMessages[idx].text || "", searchTerm, true);
+  if (textEl && searchScope === "current") {
+    textEl.innerHTML = highlightText(allMessages[idx].text || "", searchTerm, true);
+  }
 
   row.scrollIntoView({ behavior: "smooth", block: "center" });
   updateCounter();
@@ -391,12 +536,24 @@ function finishActivateMatch(idx) {
 
 function nextMatch() {
   if (!matches.length) return;
-  activateMatch((currentMatchIndex + 1) % matches.length);
+  
+  if (searchScope === "all" && typeof matches[currentMatchIndex] === "object") {
+    const newIndex = (currentMatchIndex + 1) % matches.length;
+    activateCrossFileMatch(newIndex);
+  } else {
+    activateMatch((currentMatchIndex + 1) % matches.length);
+  }
 }
 
 function prevMatch() {
   if (!matches.length) return;
-  activateMatch((currentMatchIndex - 1 + matches.length) % matches.length);
+  
+  if (searchScope === "all" && typeof matches[currentMatchIndex] === "object") {
+    const newIndex = (currentMatchIndex - 1 + matches.length) % matches.length;
+    activateCrossFileMatch(newIndex);
+  } else {
+    activateMatch((currentMatchIndex - 1 + matches.length) % matches.length);
+  }
 }
 
 function clearHighlights() {
@@ -414,8 +571,6 @@ function clearHighlights() {
     }
   });
 }
-
-// ── Highlight builder ──────────────────────────────────────────────────
 
 function highlightText(text, term, isCurrent) {
   if (!term) return escapeHtml(text);
@@ -444,11 +599,21 @@ function highlightText(text, term, isCurrent) {
 }
 
 // ── UI helpers ─────────────────────────────────────────────────────────
-
 function updateCounter() {
-  if (!searchTerm)          { searchCounter.textContent = ""; return; }
-  if (!matches.length)      { searchCounter.textContent = "No results"; return; }
-  searchCounter.textContent = `${currentMatchIndex + 1} / ${matches.length}`;
+  if (!searchTerm) { 
+    searchCounter.textContent = ""; 
+    return; 
+  }
+  if (!matches.length) { 
+    searchCounter.textContent = "No results"; 
+    return; 
+  }
+  
+  if (searchScope === "all" && typeof matches[0] === "object") {
+    searchCounter.textContent = `${currentMatchIndex + 1} / ${matches.length} files`;
+  } else {
+    searchCounter.textContent = `${currentMatchIndex + 1} / ${matches.length}`;
+  }
 }
 
 function setNavEnabled(on) {
@@ -461,12 +626,11 @@ function getRow(idx) {
 }
 
 // ── Events ─────────────────────────────────────────────────────────────
-
 function bindEvents() {
   let debounceTimer;
   searchInput.addEventListener("input", () => {
     clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => runSearch(searchInput.value), 180);
+    debounceTimer = setTimeout(() => runSearch(searchInput.value), 300);
   });
 
   searchInput.addEventListener("keydown", e => {
@@ -482,10 +646,33 @@ function bindEvents() {
 
   btnNext.addEventListener("click", nextMatch);
   btnPrev.addEventListener("click", prevMatch);
+  
+  // Sidebar events
+  if (menuToggle) {
+    menuToggle.addEventListener("click", toggleSidebar);
+  }
+  if (sidebarOverlay) {
+    sidebarOverlay.addEventListener("click", closeSidebar);
+  }
+  
+  // Search scope change
+  document.querySelectorAll('input[name="search-scope"]').forEach(radio => {
+    radio.addEventListener("change", () => {
+      if (searchTerm) {
+        runSearch(searchTerm);
+      }
+    });
+  });
+  
+  // Close sidebar on escape key
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && sidebar.classList.contains("open")) {
+      closeSidebar();
+    }
+  });
 }
 
 // ── Timestamp helpers ──────────────────────────────────────────────────
-
 function parseTimestamp(ts) {
   if (!ts) return null;
   const m = ts.match(
@@ -509,8 +696,6 @@ function formatTime(ts) {
   return m ? m[1] : "";
 }
 
-// ── Security ───────────────────────────────────────────────────────────
-
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g,  "&amp;")
@@ -523,3 +708,9 @@ function escapeHtml(str) {
 function isOwnMessage(sender) {
   return sender === "Amirhosein";
 }
+
+// ── Bootstrap ──────────────────────────────────────────────────────────
+(async () => {
+  bindEvents();
+  await loadFileIndex();
+})();
