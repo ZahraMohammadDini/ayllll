@@ -2,18 +2,59 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Chat Viewer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Chat Viewer - Multi-File Archive</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+
+  <!-- Mobile menu toggle button -->
+  <button id="menu-toggle" class="menu-toggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <line x1="3" y1="12" x2="21" y2="12"/>
+      <line x1="3" y1="6" x2="21" y2="6"/>
+      <line x1="3" y1="18" x2="21" y2="18"/>
+    </svg>
+  </button>
+
+  <!-- Sidebar -->
+  <aside id="sidebar" class="sidebar">
+    <div class="sidebar-header">
+      <svg class="icon-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+      </svg>
+      <h3>Chat Archives</h3>
+    </div>
+    
+    <div class="sidebar-stats" id="sidebar-stats">
+      <span id="total-messages">Loading...</span>
+    </div>
+    
+    <div class="search-scope">
+      <label class="scope-label">
+        <input type="radio" name="search-scope" value="current" checked>
+        <span>Search Current File</span>
+      </label>
+      <label class="scope-label">
+        <input type="radio" name="search-scope" value="all">
+        <span>Search All Files (⚠️ Slow)</span>
+      </label>
+    </div>
+    
+    <div class="file-list" id="file-list">
+      <div class="loading-files">Loading file list...</div>
+    </div>
+  </aside>
+
+  <!-- Overlay for mobile sidebar -->
+  <div id="sidebar-overlay" class="sidebar-overlay" hidden></div>
 
   <header class="topbar">
     <div class="topbar-title">
       <svg class="icon-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
       </svg>
-      <span>Chat Archive</span>
+      <span id="current-file-name">Chat Archive</span>
     </div>
     <div class="search-bar">
       <input
@@ -44,8 +85,8 @@
       <p>Loading messages…</p>
     </div>
     <div id="error" class="error-state" hidden>
-      <p>⚠️ Could not load <code>chat.min.json</code>.</p>
-      <p class="error-hint">Run <code>python3 convert.py</code> first, then place <code>chat.min.json</code> alongside <code>index.html</code>.</p>
+      <p>⚠️ Could not load chat file.</p>
+      <p class="error-hint">Make sure the <code>chunks/</code> folder exists and contains index.json</p>
     </div>
     <div id="messages" role="log" aria-label="Chat messages"></div>
   </main>
