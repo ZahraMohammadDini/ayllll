@@ -16,99 +16,61 @@ const menuButton = document.getElementById("menuButton");
 
 menuButton.onclick = () => sidebar.classList.toggle("open");
 
-/* ---------- STATE ---------- */
-let loadedCount = 0;
-const BATCH_SIZE = 100;
-
 let searchTerm = "";
 let matches = [];
 let currentMatchIndex = -1;
 
-/* ---------- LOAD DATA ---------- */
 fetch("chat.json")
 .then(r => r.json())
 .then(data => {
 
     allMessages = data;
 
-    loadMore();
+    renderAllMessages();   // 🔥 key change
     buildMonthList();
-    setupInfiniteScroll();
 
 });
 
-function loadMore(){
+function renderAllMessages(){
 
-    let end = Math.min(loadedCount + BATCH_SIZE, allMessages.length);
+    chat.innerHTML = "";
 
-    for(let i = loadedCount; i < end; i++){
-        appendMessage(allMessages[i], i);
-    }
+    let lastDay = "";
 
-    loadedCount = end;
-}
+    allMessages.forEach((msg, index) => {
 
-function appendMessage(msg, index){
+        let day = msg.timestamp.slice(0,10);
 
-    let div = document.createElement("div");
+        if(day !== lastDay){
 
-    div.className = "message";
+            lastDay = day;
 
-    if(msg.sender === "Amirhosein")
-        div.classList.add("me");
-    else
-        div.classList.add("other");
+            let d = document.createElement("div");
+            d.className = "day";
+            d.innerText = day;
 
-    div.dataset.index = index;
-
-    let text = escapeHtml(msg.text);
-
-    if(searchTerm){
-        text = highlightText(text, searchTerm);
-    }
-
-    div.innerHTML = `
-        <div class="sender">${msg.sender}</div>
-        <div class="text">${text}</div>
-        <div class="time">${msg.timestamp}</div>
-    `;
-
-    chat.appendChild(div);
-}
-
-function escapeHtml(text){
-    return text
-        .replaceAll("&","&amp;")
-        .replaceAll("<","&lt;")
-        .replaceAll(">","&gt;");
-}
-
-function highlightText(text, term){
-
-    if(!term) return text;
-
-    let regex = new RegExp(term, "gi");
-
-    return text.replace(
-        regex,
-        m => `<span class="highlight">${m}</span>`
-    );
-}
-
-function setupInfiniteScroll(){
-
-    chat.addEventListener("scroll", () => {
-
-        if(chat.scrollTop + chat.clientHeight > chat.scrollHeight - 300){
-
-            if(loadedCount < allMessages.length){
-                loadMore();
-            }
-
+            chat.appendChild(d);
         }
 
-    });
+        let div = document.createElement("div");
 
+        div.className = "message";
+
+        if(msg.sender === "Amirhosein")
+            div.classList.add("me");
+        else
+            div.classList.add("other");
+
+        div.dataset.index = index;
+
+        div.innerHTML = `
+            <div class="sender">${msg.sender}</div>
+            <div class="text">${escapeHtml(msg.text)}</div>
+            <div class="time">${msg.timestamp}</div>
+        `;
+
+        chat.appendChild(div);
+    });
 }
 
 searchBox.addEventListener("input", () => {
@@ -123,23 +85,21 @@ searchBox.addEventListener("input", () => {
         searchInfo.innerText = "";
         searchNav.style.display = "none";
 
-        rerender();
-
+        clearHighlights();
         return;
     }
 
-    for(let i = 0; i < allMessages.length; i++){
+    allMessages.forEach((msg, i) => {
 
-        if(allMessages[i].text.toLowerCase().includes(searchTerm)){
+        if(msg.text.toLowerCase().includes(searchTerm)){
             matches.push(i);
         }
-    }
+    });
 
     if(matches.length === 0){
 
         searchInfo.innerText = "0 results";
         searchNav.style.display = "none";
-
         return;
     }
 
@@ -148,15 +108,30 @@ searchBox.addEventListener("input", () => {
 
     currentMatchIndex = 0;
 
-    rerender();
+    highlightAll();
     scrollToMatch();
 });
 
-function rerender(){
+function highlightAll(){
 
-    chat.innerHTML = "";
-    loadedCount = 0;
-    loadMore();
+    document.querySelectorAll(".message .text").forEach(el => {
+
+        let original = el.innerText;
+
+        let regex = new RegExp(searchTerm, "gi");
+
+        el.innerHTML = escapeHtml(original).replace(
+            regex,
+            m => `<span class="highlight">${m}</span>`
+        );
+    });
+}
+
+function clearHighlights(){
+
+    document.querySelectorAll(".message .text").forEach(el => {
+        el.innerText = el.innerText;
+    });
 }
 
 prevMatchBtn.onclick = () => {
@@ -198,34 +173,9 @@ function scrollToMatch(){
         `${currentMatchIndex + 1} / ${matches.length}`;
 }
 
-function buildMonthList(){
-
-    let months = new Set();
-
-    allMessages.forEach(m => {
-        months.add(m.timestamp.slice(3,10));
-    });
-
-    [...months].forEach(month => {
-
-        let div = document.createElement("div");
-
-        div.className = "month";
-        div.innerText = month;
-
-        div.onclick = () => {
-
-            let index = allMessages.findIndex(
-                m => m.timestamp.includes(month)
-            );
-
-            if(index !== -1){
-                document
-                    .querySelector(`[data-index="${index}"]`)
-                    ?.scrollIntoView({behavior:"smooth"});
-            }
-        };
-
-        monthList.appendChild(div);
-    });
+function escapeHtml(text){
+    return text
+        .replaceAll("&","&amp;")
+        .replaceAll("<","&lt;")
+        .replaceAll(">","&gt;");
 }
