@@ -326,7 +326,7 @@
 </head>
 <body>
 <div class="app">
-  <!-- Sidebar: years from index.json (dynamic) -->
+  <!-- Sidebar: years -->
   <aside class="sidebar">
     <div class="sidebar-header">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="8" y1="2" x2="8" y2="6"></line><line x1="16" y1="2" x2="16" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
@@ -365,7 +365,7 @@
       </div>
       <div id="error" class="error-state" hidden>
         <p>⚠️ Could not load chat file.</p>
-        <p class="error-hint">Make sure JSON files (chat_2020.json ... chat_2026.json) and index.json exist.</p>
+        <p class="error-hint">Make sure JSON files (chat_2020.json ... chat_2026.json) exist.</p>
       </div>
       <div id="messages" role="log" aria-label="Chat messages"></div>
     </div>
@@ -378,14 +378,18 @@
 <script>
   "use strict";
 
+  // ========== CONFIGURATION ==========
+  // If you have index.json, it will be used. Otherwise, specify your years here:
+  const YEARS = [2020, 2021, 2022, 2023, 2024, 2025, 2026];
+  // ===================================
+
   // ---------- GLOBALS ----------
-  let currentMessages = [];      // message objects for active year file
-  let renderMeta = [];           // precomputed metadata per message
+  let currentMessages = [];
+  let renderMeta = [];
   let renderedUpTo = 0;
-  let renderDone = false;
   let idleHandle = null;
 
-  // Search state (per active file)
+  // Search state
   let matches = [];
   let currentMatchIndex = 0;
   let searchTerm = "";
@@ -409,7 +413,7 @@
   const IDLE_BATCH = 500;
   const IDLE_DEADLINE = 38;
 
-  // ---------- helper: decode columnar or legacy ----------
+  // ---------- Helper: decode columnar or legacy ----------
   function decodeColumnar(raw) {
     if (Array.isArray(raw)) return raw;
     if (raw && raw.v === 1 && Array.isArray(raw.fields) && Array.isArray(raw.rows)) {
@@ -424,7 +428,6 @@
     throw new Error("Invalid chat data format");
   }
 
-  // timestamp helpers (same as original)
   function parseTimestamp(ts) {
     if (!ts) return null;
     const m = ts.match(/^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2}):(\d{2})\s+UTC([+-]\d{2}:\d{2})$/);
@@ -433,11 +436,13 @@
     const d = new Date(`${yyyy}-${mo}-${dd}T${hh}:${mm}:${ss}${tz}`);
     return isNaN(d) ? null : d;
   }
+
   function formatDate(ts) {
     const d = parseTimestamp(ts);
     if (!d) return ts ? ts.slice(0, 10) : "Unknown";
     return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
   }
+
   function formatTime(ts) {
     if (!ts) return "";
     const m = ts.match(/(\d{2}:\d{2}):\d{2}/);
@@ -445,11 +450,11 @@
   }
 
   function isOwnMessage(sender) { return sender === "Amirhosein"; }
+
   function escapeHtml(str) {
     return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
-  // Build render meta for currentMessages (date grouping + chain detection)
   function buildRenderMetaForCurrent() {
     let lastDate = null, lastSender = null;
     renderMeta = currentMessages.map((msg, i) => {
@@ -463,7 +468,6 @@
     });
   }
 
-  // DOM builders
   function makeDateDivider(label) {
     const div = document.createElement("div");
     div.className = "date-divider";
@@ -528,7 +532,6 @@
         setTimeout(() => { if (progressWrap) progressWrap.hidden = true; }, 300);
       }
     }
-    // handle pending jump after rendering
     if (pendingJumpIndex !== null && pendingJumpIndex < renderedUpTo) {
       const jump = pendingJumpIndex;
       pendingJumpIndex = null;
@@ -543,11 +546,10 @@
 
   function scheduleIdleRender() {
     const tick = (deadline) => {
-      const hasTime = deadline.timeRemaining ? () => deadline.timeRemaining() > IDLE_DEADLINE : () => true;
       const end = Math.min(renderedUpTo + IDLE_BATCH, currentMessages.length);
       renderBatch(renderedUpTo, end);
       if (renderedUpTo < currentMessages.length) idleHandle = requestIdleCompat(tick);
-      else { renderDone = true; if (progressWrap) progressWrap.hidden = true; }
+      else { if (progressWrap) progressWrap.hidden = true; }
     };
     idleHandle = requestIdleCompat(tick);
   }
@@ -566,13 +568,11 @@
     idleHandle = null;
     messagesEl.innerHTML = "";
     renderedUpTo = 0;
-    renderDone = false;
     pendingJumpIndex = null;
     if (progressWrap) progressWrap.hidden = false;
     if (progressBar) progressBar.style.width = "0%";
   }
 
-  // Highlight & search logic
   function highlightText(text, term, isCurrent) {
     if (!term) return escapeHtml(text);
     const escaped = escapeHtml(text);
@@ -687,8 +687,9 @@
   }
   function setNavEnabled(on) { btnPrev.disabled = !on; btnNext.disabled = !on; }
 
-  // ---------- LOAD CHAT FILE (year-based) ----------
-  async function loadChatFile(fileName, yearLabel) {
+  // ---------- LOAD CHAT FILE ----------
+  async function loadChatFile(year) {
+    const fileName = `chat_${year}.json`;
     resetRenderState();
     errorEl.hidden = true;
     loadingEl.hidden = false;
@@ -700,11 +701,11 @@
     searchInput.value = "";
     searchCounter.textContent = "";
     setNavEnabled(false);
-    currentFileLabel.textContent = yearLabel || fileName.replace(/\.json$/i, "");
+    currentFileLabel.textContent = `Chat ${year}`;
 
     try {
       const res = await fetch(fileName);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status} - file not found`);
       const raw = await res.json();
       currentMessages = decodeColumnar(raw);
       if (!currentMessages.length) throw new Error("Empty messages");
@@ -716,74 +717,42 @@
       loadingEl.hidden = true;
       if (searchInput.value.trim()) runSearch();
     } catch (err) {
-      console.error(err);
+      console.error(`Failed to load ${fileName}:`, err);
       loadingEl.hidden = true;
       errorEl.hidden = false;
+      const errorMsg = errorEl.querySelector("p");
+      if (errorMsg) errorMsg.innerHTML = `⚠️ Could not load ${fileName}. Make sure the file exists.`;
     }
   }
 
-  // ---------- Build sidebar from index.json (expects year list: chat_2020.json ... chat_2026.json) ----------
+  // ---------- Build sidebar from year array ----------
   async function buildSidebar() {
-    try {
-      const indexRes = await fetch("index.json");
-      if (!indexRes.ok) throw new Error("index.json not found");
-      const files = await indexRes.json();
-      // Support both array of strings or array of objects
-      let fileEntries = [];
-      if (Array.isArray(files)) {
-        fileEntries = files.map(f => {
-          if (typeof f === "string") return { file: f, label: extractYearLabel(f) };
-          return { file: f.file, label: f.label || extractYearLabel(f.file) };
-        });
-      } else {
-        throw new Error("index.json must be an array");
-      }
+    fileListEl.innerHTML = "";
+    let firstYear = null;
 
-      if (fileEntries.length === 0) throw new Error("No files listed");
+    for (const year of YEARS) {
+      const li = document.createElement("li");
+      const btn = document.createElement("button");
+      btn.className = "file-item";
+      btn.innerHTML = `<span class="year-badge">${year}</span><span class="file-name">Chat ${year}</span>`;
+      btn.addEventListener("click", async (e) => {
+        document.querySelectorAll(".file-item").forEach(el => el.classList.remove("active"));
+        btn.classList.add("active");
+        await loadChatFile(year);
+      });
+      li.appendChild(btn);
+      fileListEl.appendChild(li);
+      if (!firstYear) firstYear = year;
+    }
 
-      fileListEl.innerHTML = "";
-      let firstFile = null;
-
-      for (const entry of fileEntries) {
-        const filePath = entry.file;
-        const label = entry.label;
-        const li = document.createElement("li");
-        const btn = document.createElement("button");
-        btn.className = "file-item";
-        // Extract year for badge if looks like chat_2020.json
-        let yearMatch = filePath.match(/chat_(\d{4})\.json/);
-        let badgeText = yearMatch ? yearMatch[1] : (label.length > 6 ? label.slice(0,6) : label);
-        btn.innerHTML = `<span class="year-badge">${escapeHtml(badgeText)}</span><span class="file-name">${escapeHtml(label)}</span>`;
-        btn.addEventListener("click", (e) => {
-          document.querySelectorAll(".file-item").forEach(el => el.classList.remove("active"));
-          btn.classList.add("active");
-          loadChatFile(filePath, label);
-        });
-        li.appendChild(btn);
-        fileListEl.appendChild(li);
-        if (!firstFile) firstFile = { filePath, label };
-      }
-
-      if (firstFile) {
-        const firstBtn = fileListEl.querySelector(".file-item");
-        if (firstBtn) firstBtn.classList.add("active");
-        await loadChatFile(firstFile.filePath, firstFile.label);
-      } else {
-        throw new Error("No valid files");
-      }
-    } catch (err) {
-      console.error(err);
+    if (firstYear) {
+      const firstBtn = fileListEl.querySelector(".file-item");
+      if (firstBtn) firstBtn.classList.add("active");
+      await loadChatFile(firstYear);
+    } else {
       loadingEl.hidden = true;
       errorEl.hidden = false;
-      const errMsg = errorEl.querySelector("p");
-      if (errMsg) errMsg.innerHTML = "⚠️ Could not load <code>index.json</code>. Expected format: <code>[\"chat_2020.json\", \"chat_2021.json\", ...]</code>";
     }
-  }
-
-  function extractYearLabel(filename) {
-    const match = filename.match(/chat_(\d{4})\.json/);
-    if (match) return `Chat ${match[1]}`;
-    return filename.replace(/\.json$/i, "").replace(/_/g, " ");
   }
 
   // Event binding
