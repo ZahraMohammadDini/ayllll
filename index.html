@@ -1,156 +1,96 @@
-#!/usr/bin/env python3
-"""
-split_chat.py — Split chat.min.json into separate JSON files in current folder
-Usage: python3 split_chat.py [input.json] [year|size] [messages_per_file]
-"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Chat Viewer - Multi-File Archive</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
 
-import json
-import os
-import sys
-from collections import defaultdict
-import re
+  <!-- Mobile menu toggle button -->
+  <button id="menu-toggle" class="menu-toggle" aria-label="Toggle sidebar">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <line x1="3" y1="12" x2="21" y2="12"/>
+      <line x1="3" y1="6" x2="21" y2="6"/>
+      <line x1="3" y1="18" x2="21" y2="18"/>
+    </svg>
+  </button>
 
-def split_by_year(input_file="chat.min.json", output_dir="."):
-    """Split messages into separate JSON files by year in current folder"""
+  <!-- Sidebar -->
+  <aside id="sidebar" class="sidebar">
+    <div class="sidebar-header">
+      <svg class="icon-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+      </svg>
+      <h3>Chat Archives</h3>
+    </div>
     
-    print(f"Reading {input_file}...")
-    with open(input_file, 'r', encoding='utf-8') as f:
-        data = json.load(f)
+    <div class="sidebar-stats" id="sidebar-stats">
+      <span id="total-messages">Loading...</span>
+    </div>
     
-    fields = data['fields']
-    rows = data['rows']
+    <div class="search-scope">
+      <label class="scope-label">
+        <input type="radio" name="search-scope" value="current" checked>
+        <span>Search Current File</span>
+      </label>
+      <label class="scope-label">
+        <input type="radio" name="search-scope" value="all">
+        <span>Search All Files (⚠️ Slow)</span>
+      </label>
+    </div>
     
-    # Group messages by year
-    year_messages = defaultdict(list)
-    timestamp_idx = fields.index('timestamp')
-    
-    for row in rows:
-        timestamp = row[timestamp_idx]
-        match = re.match(r'\d{2}\.(\d{2})\.(\d{4})', timestamp)
-        if match:
-            year = match.group(2)
-            year_messages[year].append(row)
-        else:
-            year_messages['unknown'].append(row)
-    
-    # Create index file in current directory
-    index = {
-        "v": 1,
-        "type": "index",
-        "files": [],
-        "total_messages": len(rows)
-    }
-    
-    # Save each year as separate file in current directory
-    for year in sorted(year_messages.keys()):
-        if year == 'unknown':
-            filename = "chat_unknown.json"
-            display_name = "Unknown Date"
-        else:
-            filename = f"chat_{year}.json"
-            display_name = year
-        
-        output_data = {
-            "v": 1,
-            "fields": fields,
-            "rows": year_messages[year],
-            "metadata": {
-                "year": year if year != 'unknown' else None,
-                "message_count": len(year_messages[year]),
-                "display_name": display_name
-            }
-        }
-        
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(output_data, f, ensure_ascii=False, separators=(',', ':'))
-        
-        print(f"  ✓ Saved {len(year_messages[year]):,} messages to {filename}")
-        
-        index["files"].append({
-            "name": display_name,
-            "filename": filename,
-            "message_count": len(year_messages[year]),
-            "year": year if year != 'unknown' else None
-        })
-    
-    # Save index file in current directory
-    with open("index.json", 'w', encoding='utf-8') as f:
-        json.dump(index, f, ensure_ascii=False, separators=(',', ':'))
-    
-    print(f"\n✅ Split complete!")
-    print(f"   Total messages: {len(rows):,}")
-    print(f"   Files created: {len(year_messages)}")
-    print(f"   Index file: index.json")
-    print(f"\n📁 All files are in the current directory (same as your HTML)")
-    
-    return index
+    <div class="file-list" id="file-list">
+      <div class="loading-files">Loading file list...</div>
+    </div>
+  </aside>
 
-def split_by_custom_size(input_file="chat.min.json", messages_per_file=5000):
-    """Split by message count in current folder"""
-    
-    print(f"Reading {input_file}...")
-    with open(input_file, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    
-    fields = data['fields']
-    rows = data['rows']
-    total = len(rows)
-    
-    num_files = (total + messages_per_file - 1) // messages_per_file
-    
-    index = {
-        "v": 1,
-        "type": "index",
-        "files": [],
-        "total_messages": total
-    }
-    
-    for i in range(num_files):
-        start = i * messages_per_file
-        end = min((i + 1) * messages_per_file, total)
-        
-        filename = f"chat_part_{i+1:03d}.json"
-        display_name = f"Messages {start+1:,} - {end:,}"
-        
-        output_data = {
-            "v": 1,
-            "fields": fields,
-            "rows": rows[start:end],
-            "metadata": {
-                "part": i + 1,
-                "start_index": start,
-                "end_index": end,
-                "message_count": end - start,
-                "display_name": display_name
-            }
-        }
-        
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(output_data, f, ensure_ascii=False, separators=(',', ':'))
-        
-        print(f"  ✓ Saved {end-start:,} messages to {filename}")
-        
-        index["files"].append({
-            "name": display_name,
-            "filename": filename,
-            "message_count": end - start,
-            "part": i + 1
-        })
-    
-    with open("index.json", 'w', encoding='utf-8') as f:
-        json.dump(index, f, ensure_ascii=False, separators=(',', ':'))
-    
-    print(f"\n✅ Split complete! Created {num_files} files in current directory.")
-    return index
+  <!-- Overlay for mobile sidebar -->
+  <div id="sidebar-overlay" class="sidebar-overlay" hidden></div>
 
-if __name__ == "__main__":
-    input_file = sys.argv[1] if len(sys.argv) > 1 else "chat.min.json"
-    split_type = sys.argv[2] if len(sys.argv) > 2 else "year"
-    
-    if split_type == "year":
-        split_by_year(input_file)
-    elif split_type == "size":
-        size = int(sys.argv[3]) if len(sys.argv) > 3 else 5000
-        split_by_custom_size(input_file, size)
-    else:
-        print("Usage: python3 split_chat.py [input.json] [year|size] [messages_per_file]")
+  <header class="topbar">
+    <div class="topbar-title">
+      <svg class="icon-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      </svg>
+      <span id="current-file-name">Chat Archive</span>
+    </div>
+    <div class="search-bar">
+      <input
+        id="search-input"
+        type="text"
+        placeholder="Search messages…"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <div id="search-counter" class="search-counter" aria-live="polite"></div>
+      <button id="btn-prev" class="nav-btn" title="Previous match" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+      </button>
+      <button id="btn-next" class="nav-btn" title="Next match" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Progress bar -->
+  <div id="progress-wrap" class="progress-wrap" hidden>
+    <div id="progress-bar" class="progress-bar"></div>
+  </div>
+
+  <main id="chat-container">
+    <div id="loading" class="loading-state">
+      <div class="spinner"></div>
+      <p>Loading messages…</p>
+    </div>
+    <div id="error" class="error-state" hidden>
+      <p>⚠️ Could not load chat file.</p>
+      <p class="error-hint">Make sure <code>index.json</code> exists in the same folder</p>
+    </div>
+    <div id="messages" role="log" aria-label="Chat messages"></div>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
