@@ -1,36 +1,50 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Telegram Reader</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chat Viewer</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-<div class="container">
-
-    <div class="sidebar">
-
-        <h2>Telegram Reader</h2>
-
-        <input id="searchBox" placeholder="Search messages...">
-
-        <div id="searchInfo"></div>
-
-        <div id="searchNav">
-            <button id="prevMatch">▲</button>
-            <span id="matchCounter">0 / 0</span>
-            <button id="nextMatch">▼</button>
-        </div>
-
+  <header class="topbar">
+    <div class="topbar-title">
+      <svg class="icon-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+      </svg>
+      <span>Chat Archive</span>
     </div>
+    <div class="search-bar">
+      <input
+        id="search-input"
+        type="text"
+        placeholder="Search messages…"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <div id="search-counter" class="search-counter" aria-live="polite"></div>
+      <button id="btn-prev" class="nav-btn" title="Previous match" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+      </button>
+      <button id="btn-next" class="nav-btn" title="Next match" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </header>
 
-    <div id="chat"></div>
+  <main id="chat-container">
+    <div id="loading" class="loading-state">
+      <div class="spinner"></div>
+      <p>Loading messages…</p>
+    </div>
+    <div id="error" class="error-state" hidden>
+      <p>⚠️ Could not load <code>chat.json</code>.</p>
+      <p class="error-hint">Make sure <code>chat.json</code> is in the same folder as <code>index.html</code>.</p>
+    </div>
+    <div id="messages" role="log" aria-label="Chat messages"></div>
+  </main>
 
-</div>
-
-<script src="script.js"></script>
-
+  <script src="script.js"></script>
 </body>
 </html>
