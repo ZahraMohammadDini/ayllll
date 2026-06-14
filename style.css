@@ -333,3 +333,27 @@ mark.highlight.current {
   .msg-row { animation: none; }
   #chat-container { scroll-behavior: auto; }
 }
+
+/* ─── Progress Bar ──────────────────────────────────────────────────── */
+.progress-wrap {
+  position: fixed;
+  top: 56px;
+  left: 0; right: 0;
+  height: 2px;
+  z-index: 99;
+  background: transparent;
+}
+
+.progress-wrap[hidden] { display: none; }
+
+.progress-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--name-me), var(--name-other));
+  transition: width 0.3s ease-out;
+  border-radius: 0 1px 1px 0;
+}
+
+@media (max-width: 520px) {
+  .progress-wrap { top: 52px; }
+}
