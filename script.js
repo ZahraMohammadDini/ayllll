@@ -1,10 +1,15 @@
 /* ═══════════════════════════════════════════════════════════════════════
    Telegram Chat Viewer — script.js
    Architecture:
-     chat.json  →  allMessages[]  →  DOM  (one-way data flow)
-     Search    →  runs on allMessages[] only, never the DOM
-     Rendering →  chunked progressive via requestIdleCallback / setTimeout
-                  so the page is interactive within ~100ms of data load
+     chat.min.json  →  allMessages[]  →  DOM  (one-way data flow)
+     Search         →  runs on allMessages[] only, never the DOM
+     Rendering      →  chunked progressive via requestIdleCallback / setTimeout
+                       so the page is interactive within ~100ms of data load
+
+   Data format:
+     Expects the columnar format produced by convert.py:
+       { "v":1, "fields":[...], "rows":[[...], ...] }
+     Falls back to the legacy array-of-objects format automatically.
    ═══════════════════════════════════════════════════════════════════════ */
 
 "use strict";
@@ -45,14 +50,49 @@ const searchCounter = document.getElementById("search-counter");
 const btnPrev       = document.getElementById("btn-prev");
 const btnNext       = document.getElementById("btn-next");
 
+// ── Columnar decoder ───────────────────────────────────────────────────
+/**
+ * Accepts either:
+ *   - Columnar format: { v:1, fields:[...], rows:[[...], ...] }
+ *   - Legacy format:   [ { id, sender, ... }, ... ]
+ *
+ * Always returns a plain array of message objects so the rest of the
+ * code never needs to know which format was loaded.
+ *
+ * Boolean optimisation: is_forwarded is stored as 0/1 in columnar format.
+ * We cast it back to boolean here so downstream code is unchanged.
+ */
+function decodeColumnar(raw) {
+  // Legacy array-of-objects — pass through unchanged
+  if (Array.isArray(raw)) return raw;
+
+  // Columnar format
+  if (raw && raw.v === 1 && Array.isArray(raw.fields) && Array.isArray(raw.rows)) {
+    const fields = raw.fields;
+    const fLen   = fields.length;
+    return raw.rows.map(row => {
+      const msg = {};
+      for (let f = 0; f < fLen; f++) {
+        msg[fields[f]] = row[f] !== undefined ? row[f] : null;
+      }
+      // Restore boolean
+      msg.is_forwarded = !!msg.is_forwarded;
+      return msg;
+    });
+  }
+
+  throw new Error("Unrecognised chat data format.");
+}
+
 // ── Boot ───────────────────────────────────────────────────────────────
 (async () => {
   try {
-    const res = await fetch("chat.json");
+    const res = await fetch("chat.min.json");
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    allMessages = await res.json();
+    const raw = await res.json();
+    allMessages = decodeColumnar(raw);
   } catch (e) {
-    console.error("Failed to load chat.json:", e);
+    console.error("Failed to load chat.min.json:", e);
     loadingEl.hidden = true;
     errorEl.hidden   = false;
     return;
