@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram Reader</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<button id="menuButton">☰</button>
+
+<div class="container">
+
+    <div class="sidebar" id="sidebar">
+
+        <h2>Telegram Reader</h2>
+
+        <input id="searchBox" placeholder="Search messages...">
+
+        <div id="searchInfo"></div>
+
+        <div id="searchNav">
+            <button id="prevMatch">▲</button>
+            <span id="matchCounter">0 / 0</span>
+            <button id="nextMatch">▼</button>
+        </div>
+
+        <input type="date" id="datePicker">
+
+        <div id="monthList"></div>
+
+    </div>
+
+    <div class="chat" id="chat"></div>
+
+</div>
+
+<script src="script.js"></script>
+
+</body>
+</html>
